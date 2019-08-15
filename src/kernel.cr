@@ -467,6 +467,12 @@ module AtExitHandlers
 
       STDERR.print "Unhandled exception: "
       ex.inspect_with_backtrace(STDERR)
+      if !CallStack.debuginfo_file?
+        STDERR.print "\nThe debuginfo seems missing, above backtrace may be incorrect or incomplete.\n"
+        if path = Process.executable_path
+          STDERR.print "Please retry after installing debuginfo of `#{path}`\n"
+        end
+      end
       STDERR.flush
     end
 

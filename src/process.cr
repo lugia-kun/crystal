@@ -93,6 +93,12 @@ class Process
         LibC._exit 0
       rescue ex
         ex.inspect_with_backtrace STDERR
+        if !CallStack.debuginfo_file?
+          STDERR.print "\nThe debuginfo seems missing, above backtrace may be incorrect or incomplete.\n"
+          if path = Process.executable_path
+            STDERR.print "Please retry after installing debuginfo of `#{path}`\n"
+          end
+        end
         STDERR.flush
         LibC._exit 1
       ensure
@@ -272,6 +278,12 @@ class Process
         writer_pipe.close
       rescue ex
         ex.inspect_with_backtrace STDERR
+        if !CallStack.debuginfo_file?
+          STDERR.print "\nThe debuginfo seems missing, above backtrace may be incorrect or incomplete.\n"
+          if path = Process.executable_path
+            STDERR.print "Please retry after installing debuginfo of `#{path}`\n"
+          end
+        end
         STDERR.flush
       ensure
         LibC._exit 127
