@@ -215,6 +215,25 @@ struct CallStack
     end
   end
 
+  # Path to a file which stores (valid) debug info.
+  #
+  # This is cached value for using outside of CallStack. CallStack
+  # always searches the valid file when debuginfo is requested.
+  # The path stored here is **not** guaranteed to be exist (and valid).
+  #
+  # The value will be `nil` until methods which requires CallStack,
+  # like `#caller` or `Exception#inspect_with_backtrace` are called.
+  # This is intended to be used after those methods are called,
+  # to notify the user that the debuginfo is missing.
+  #
+  # This variable does exist on all platforms, but will be set only on
+  # Linux, OpenBSD or FreeBSD.
+  @@debuginfo_file : String? = nil
+
+  def self.debuginfo_file?
+    @@debuginfo_file
+  end
+
   {% if flag?(:darwin) || flag?(:freebsd) || flag?(:linux) || flag?(:openbsd) %}
     @@dwarf_line_numbers : Debug::DWARF::LineNumbers?
     @@dwarf_function_names : Array(Tuple(LibC::SizeT, LibC::SizeT, String))?
@@ -366,8 +385,84 @@ struct CallStack
     {% else %}
       @@base_address : UInt64|UInt32|Nil
 
+      # Ref: https://interrupt.memfault.com/blog/gnu-build-id-for-firmware
+      # See also: /usr/include/elf.h
+      protected def self.read_buildid(elf)
+        elf.read_section?(".note.gnu.build-id") do |sh, io|
+          data = Debug::DWARF::Strings.new(io, sh.offset, sh.size)
+          namesz = io.read_bytes(UInt32)
+          descsz = io.read_bytes(UInt32)
+          vendor = io.read_bytes(UInt32)
+          name = data.decode(io.pos - sh.offset)
+          desc = Bytes.new(descsz)
+          io.pos += name.bytesize + 1
+          io.read(desc)
+          {name: name, desc: desc}
+        end
+      end
+
+      protected def self.read_buildid(file : String)
+        Debug::ELF.open(file) do |elf|
+          read_buildid(elf)
+        end
+      end
+
+      protected def self.locate_debug_info(&block)
+        program = Process.executable_path
+        if program && program.starts_with?('/')
+          debug_path = "/usr/lib/debug#{program}.debug"
+
+          buildid = read_buildid(program)
+          if buildid
+            b1 = buildid[:desc][0..0].hexstring
+            bx = buildid[:desc][1..-1].hexstring
+            buildid_str = b1 + bx
+            buildid_path = File.join("/usr/lib/debug/.build-id", b1, bx)
+          end
+        end
+
+        files = {
+          program,
+          buildid_path,
+          debug_path,
+          PROGRAM_NAME,
+        }
+
+        files.each do |path|
+          next if path.nil?
+          next unless File.readable?(path)
+          info = File.info?(path, follow_symlinks: true)
+          next unless info
+          next if info.type != File::Type::File
+          begin
+            Debug::ELF.open(path) do |elf|
+              has_info = true
+              if buildid && path != program
+                other_buildid = read_buildid(elf)
+                if other_buildid
+                  if other_buildid[:desc] != buildid[:desc]
+                    has_info = false
+                  end
+                else
+                  has_info = false
+                end
+              end
+              has_info = has_info && elf.read_section?(".debug_info") { true }
+              has_info = has_info && elf.read_section?(".debug_line") { true }
+              has_info = has_info && elf.read_section?(".debug_str")  { true }
+              if has_info
+                return yield path, elf
+              end
+            end
+          rescue ex
+            STDERR.print "Error while reading debuginfo: #{path} - #{ex.to_s}\n"
+          end
+        end
+        nil
+      end
+
       protected def self.read_dwarf_sections
-        Debug::ELF.open(PROGRAM_NAME) do |elf|
+        locate_debug_info do |file, elf|
           elf.read_section?(".text") do |sh, _|
             @@base_address = sh.addr - sh.offset
           end
@@ -395,6 +490,7 @@ struct CallStack
               end
             end
 
+            @@debuginfo_file = file
             @@dwarf_function_names = names
           end
         end
