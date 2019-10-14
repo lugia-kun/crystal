@@ -25,11 +25,10 @@ end
 {% end %}
 
 {% begin %}
-  @[Link("stdc++")]
   {% if flag?(:static) %}
-    @[Link(ldflags: "`{{LibLLVM::LLVM_CONFIG.id}} --libs --system-libs --ldflags --link-static 2> /dev/null`")]
+    @[Link(ldflags: "`{{LibLLVM::LLVM_CONFIG.id}} --libs --system-libs --ldflags --link-static 2> /dev/null` -lc++ -lc++abi")]
   {% else %}
-    @[Link(ldflags: "`{{LibLLVM::LLVM_CONFIG.id}} --libs --system-libs --ldflags 2> /dev/null`")]
+    @[Link(ldflags: "`{{LibLLVM::LLVM_CONFIG.id}} --libs --system-libs --ldflags --link-static 2> /dev/null` -Wl,-Bstatic,-lc++,-lc++abi -Wl,-Bdynamic")]
   {% end %}
   lib LibLLVM
     VERSION = {{`#{LibLLVM::LLVM_CONFIG} --version`.chomp.stringify}}
