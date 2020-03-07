@@ -146,14 +146,14 @@ class Crystal::Command
     rescue ex
       if @show_backtrace
         ex.inspect_with_backtrace @stderr
-        @stderr.puts
-        error "couldn't format '#{filename}', please report a bug including the contents of it: https://github.com/crystal-lang/crystal/issues"
         if !CallStack.debuginfo_file?
           error "The debuginfo seems missing. Above traceback may be incorrect or incomplete."
           if path = Process.executable_path
             error "Please retry after installing debuginfo of `#{path}`."
           end
         end
+        @stderr.puts
+        error "couldn't format '#{filename}', please report a bug including the contents of it: https://github.com/crystal-lang/crystal/issues"
       else
         error "there's a bug formatting '#{filename}', to show more information, please run:\n\n  $ crystal tool format --show-backtrace #{@format_stdin ? "-" : "'#{filename}'"}\n"
       end
